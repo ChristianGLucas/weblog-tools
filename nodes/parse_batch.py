@@ -15,8 +15,8 @@ def parse_batch(ax: AxiomContext, input: BatchInput) -> BatchResult:
     """Parse a multi-line blob of access-log lines into an array of
     structured LogEntry records, reporting which lines failed rather than
     aborting the whole batch on the first bad line. `format_name` selects a
-    fixed format — "common", "combined", or "nginx_combined" (the default
-    when left empty) — or "custom", in which case `format` must hold an
+    fixed format — "common", "combined" (the default when left empty), or
+    "nginx_combined" — or "custom", in which case `format` must hold an
     Apache LogFormat directive string. Blank lines are skipped (not
     counted as errors). Bounded to 4 MiB and 200000 lines, checked on the
     raw input BEFORE any per-line parsing — an oversized blob is rejected

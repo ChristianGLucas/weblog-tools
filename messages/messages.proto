@@ -150,7 +150,7 @@ message TimestampResult {
 // lines — both checked on the raw input BEFORE any per-line parsing, so an
 // oversized blob is rejected deterministically rather than partially
 // processed or OOMing. `format_name` selects a fixed format ("common",
-// "combined", "nginx_combined" — the default) or "custom", in which case
+// "combined" — the default, "nginx_combined") or "custom", in which case
 // `format` must hold the LogFormat directive string to use.
 message BatchInput {
   string blob = 1;

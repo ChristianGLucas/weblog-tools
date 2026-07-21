@@ -93,8 +93,8 @@ nodes:
         Parse a multi-line blob of access-log lines into an array of
         structured LogEntry records, reporting which lines failed rather
         than aborting the whole batch on the first bad line.
-        `format_name` selects a fixed format — "common", "combined", or
-        "nginx_combined" (the default) — or "custom", in which case
+        `format_name` selects a fixed format — "common", "combined" (the
+        default), or "nginx_combined" — or "custom", in which case
         `format` must hold an Apache LogFormat directive string. Bounded
         to 4 MiB and 200000 lines, checked on the raw input BEFORE any
         per-line parsing — an oversized blob is rejected deterministically
