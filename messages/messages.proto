@@ -1,0 +1,278 @@
+// This file defines the data contracts (messages) for your Axiom package.
+// Every node's --input and --output refers to a message defined here.
+//
+// Run `axiom create message <Name>` to scaffold a new message below.
+// Run `axiom generate` to compile these definitions into language bindings in gen/.
+//
+// DOCUMENTATION
+//   Comments written directly above a message or field declaration are extracted
+//   automatically at publish time and shown in the Axiom registry as documentation.
+//   Write your descriptions there — no separate doc files needed.
+//
+//   Leading comment  (no blank line before the declaration) → registry description ✓
+//   Detached comment (blank line before the declaration)    → ignored by registry  ✗
+//
+// This file is yours to edit. Axiom only appends new message blocks — it never
+// overwrites or removes content you have written.
+
+syntax = "proto3";
+
+package christiangeorgelucas.weblog_tools;
+
+// The canonical parsed-access-log-line envelope, produced by every Parse*
+// node and consumed by every batch-analysis node (ExtractField,
+// SummarizeBatch, FilterBatch). `ok=false` means the line could not be
+// parsed at all — every other field is then at its zero value except
+// raw_line/format_string/format_name/error_code/error_message. `ok=true`
+// fields hold only what the source line actually carried: `has_status` and
+// `has_bytes_sent` distinguish "field present as 0" from "field absent /
+// '-' in the log" (the same convention CLF itself uses for an unsent byte
+// count). `method`/`path`/`protocol` are populated from `request_line` via
+// the same logic as the standalone SplitRequestLine node — `path` is the
+// raw request-target exactly as written (may still carry a query string;
+// feed it to url-tools' ParseUrl/GetQueryParams to split further).
+message LogEntry {
+  // The original log line, trailing newline stripped, exactly as given.
+  string raw_line = 1;
+  // The Apache LogFormat directive string used to parse this line.
+  string format_string = 2;
+  // Which named format produced this entry: "common", "combined",
+  // "nginx_combined", or "custom".
+  string format_name = 3;
+
+  // %h — the client address as logged (may be a hostname if HostnameLookups
+  // is on; almost always a raw IP in practice).
+  string remote_host = 4;
+  // %l — the RFC 1413 identd identity; almost always "-" (unknown) in the
+  // wild since identd is essentially extinct.
+  string ident = 5;
+  // %u — the authenticated remote user; empty when the request was
+  // unauthenticated (logged as "-").
+  string user = 6;
+  // %v — the virtual host that served the request; empty if the format
+  // string has no %v directive.
+  string virtual_host = 7;
+
+  // The request timestamp (%t) normalized to an ISO 8601 instant, carrying
+  // the UTC offset the log line itself recorded — never the wall clock.
+  string timestamp = 8;
+  // The original, unparsed %t text, e.g. "[01/Nov/2017:07:28:29 +0000]".
+  string timestamp_raw = 9;
+
+  // %r — the full request line exactly as logged, e.g. "GET / HTTP/1.1".
+  // "-" (Apache's convention for a line it could not parse at all) yields
+  // method/path/protocol all empty rather than a fabricated split.
+  string request_line = 10;
+  string method = 11;
+  string path = 12;
+  string protocol = 13;
+
+  // %>s (final status) or %s (first-line status) depending on the format.
+  int32 status = 14;
+  bool has_status = 15;
+  // %b/%O — response body size in bytes.
+  int64 bytes_sent = 16;
+  bool has_bytes_sent = 17;
+
+  // "%{Referer}i" — empty when the format has no Referer header directive
+  // or the request carried no Referer.
+  string referer = 18;
+  // "%{User-agent}i" — empty when the format has no User-Agent header
+  // directive or the request carried none. Feed this into
+  // useragent-tools' Parse node for browser/OS/device breakdown.
+  string user_agent = 19;
+
+  // Every directive's raw string value, keyed by its exact directive token
+  // (e.g. "%h", "%>s", "%{Referer}i") — an escape hatch for any directive
+  // in a custom format string that has no dedicated field above.
+  map<string, string> directives = 20;
+
+  bool ok = 21;
+  // Stable codes: EMPTY_INPUT, TOO_LARGE, INVALID_FORMAT, PARSE_ERROR, INTERNAL.
+  string error_code = 22;
+  string error_message = 23;
+}
+
+// Input for the fixed-format single-line parse nodes (ParseCommonLogLine,
+// ParseCombinedLogLine, ParseNginxLogLine). `line` is bounded to 65536
+// bytes — far beyond any realistic access-log line — before parsing.
+message ParseLineInput {
+  string line = 1;
+}
+
+// Input for ParseCustomFormatLine: an Apache LogFormat directive string
+// (e.g. `%h %l %u %t "%r" %>s %b "%{Referer}i" "%{User-agent}i"`) plus one
+// line to parse against it. `format` is bounded to 4096 bytes, `line` to
+// 65536 bytes.
+message ParseCustomFormatInput {
+  string format = 1;
+  string line = 2;
+}
+
+// Input for SplitRequestLine: a bare HTTP request-line as logged by %r,
+// e.g. "GET /a/b?x=1 HTTP/1.1". Bounded to 65536 bytes.
+message RequestLineInput {
+  string request_line = 1;
+}
+
+message RequestLineParts {
+  bool ok = 1;
+  // Stable codes: EMPTY_INPUT, TOO_LARGE, MALFORMED.
+  string error_code = 2;
+  string error_message = 3;
+  string method = 4;
+  // The raw request-target, exactly as written — may carry a query string
+  // and/or be absolute-form; not decoded or normalized.
+  string path = 5;
+  string protocol = 6;
+}
+
+// Input for ParseTimestamp: a raw Apache/CLF timestamp, e.g.
+// "[01/Nov/2017:07:28:29 +0000]" (brackets optional). Bounded to 128 bytes.
+message TimestampInput {
+  string timestamp = 1;
+}
+
+message TimestampResult {
+  bool ok = 1;
+  // Stable codes: EMPTY_INPUT, TOO_LARGE, PARSE_ERROR.
+  string error_code = 2;
+  string error_message = 3;
+  // Normalized ISO 8601 instant, carrying the offset the input carried
+  // (never converted to a different zone, never the wall clock).
+  string iso8601 = 4;
+  // The signed UTC offset as written, e.g. "+00:00" or "-05:00".
+  string timezone_offset = 5;
+}
+
+// Input for ParseBatch: a multi-line blob of access-log lines. `blob` is
+// hard-capped at 4 MiB (the Axiom node transport ceiling) and at 200000
+// lines — both checked on the raw input BEFORE any per-line parsing, so an
+// oversized blob is rejected deterministically rather than partially
+// processed or OOMing. `format_name` selects a fixed format ("common",
+// "combined", "nginx_combined" — the default) or "custom", in which case
+// `format` must hold the LogFormat directive string to use.
+message BatchInput {
+  string blob = 1;
+  string format = 2;
+  string format_name = 3;
+}
+
+message LineError {
+  // 1-based line number within the blob.
+  int32 line_number = 1;
+  // The offending line, truncated to 512 bytes if longer.
+  string line = 2;
+  string error_code = 3;
+  string error_message = 4;
+}
+
+message BatchResult {
+  bool ok = 1;
+  // Stable codes: EMPTY_INPUT, TOO_LARGE, TOO_MANY_LINES, INVALID_FORMAT.
+  // Set only when the WHOLE batch is rejected before any line is parsed;
+  // per-line failures are reported in `errors` with `ok` still true.
+  string error_code = 2;
+  string error_message = 3;
+  repeated LogEntry entries = 4;
+  repeated LineError errors = 5;
+  int32 total_lines = 6;
+  int32 parsed_count = 7;
+  int32 failed_count = 8;
+}
+
+// Input for DetectFormat: one or more sample lines (e.g. the first N lines
+// of a log file). At most 1000 lines, each bounded to 65536 bytes.
+message DetectFormatInput {
+  repeated string lines = 1;
+}
+
+message DetectFormatResult {
+  bool ok = 1;
+  // Stable codes: EMPTY_INPUT, TOO_LARGE, TOO_MANY_LINES.
+  string error_code = 2;
+  string error_message = 3;
+  // "common", "combined_or_nginx", "unknown", or "ambiguous" (different
+  // lines in the sample matched different formats).
+  string best_guess = 4;
+  // Every named format that matched at least one sample line.
+  repeated string matched_formats = 5;
+  int32 lines_checked = 6;
+  int32 lines_matched = 7;
+}
+
+// Input for ExtractField: pull one field across a batch of already-parsed
+// entries (typically chained from ParseBatch's `entries`).
+message ExtractFieldInput {
+  repeated LogEntry entries = 1;
+  // One of: remote_host, ident, user, virtual_host, timestamp, method,
+  // path, protocol, status, bytes_sent, referer, user_agent.
+  string field = 2;
+}
+
+message ExtractFieldResult {
+  bool ok = 1;
+  // Stable codes: EMPTY_INPUT, UNKNOWN_FIELD.
+  string error_code = 2;
+  string error_message = 3;
+  // One value per input entry, in order (empty string for a missing/zero
+  // value on that entry — same length as the input `entries`, so callers
+  // can zip them back together positionally).
+  repeated string values = 4;
+}
+
+message SummarizeBatchInput {
+  repeated LogEntry entries = 1;
+}
+
+message StatusClassCount {
+  // "2xx", "3xx", "4xx", "5xx", or "other" (no/invalid status).
+  string status_class = 1;
+  int32 count = 2;
+}
+
+message MethodCount {
+  // The method as logged; empty method counted separately.
+  string method = 1;
+  int32 count = 2;
+}
+
+message BatchSummary {
+  bool ok = 1;
+  // Stable codes: EMPTY_INPUT.
+  string error_code = 2;
+  string error_message = 3;
+  int32 total_entries = 4;
+  // Sum of bytes_sent across entries that have it.
+  int64 total_bytes = 5;
+  repeated StatusClassCount status_classes = 6;
+  repeated MethodCount methods = 7;
+  // Count of input entries with ok=false (parse failures carried through
+  // from an upstream ParseBatch's `entries`, if the caller chose to
+  // include them).
+  int32 error_entry_count = 8;
+}
+
+// Input for FilterBatch: keep only entries whose `field` satisfies `op`
+// against `value`. Numeric ops (gt/gte/lt/lte) parse `value` and the
+// entry's field as integers; a non-numeric field or value with a numeric
+// op is a per-comparison non-match, not an error.
+message FilterBatchInput {
+  repeated LogEntry entries = 1;
+  // One of: remote_host, ident, user, virtual_host, method, path,
+  // protocol, status, bytes_sent, referer, user_agent.
+  string field = 2;
+  // One of: eq, ne, gt, gte, lt, lte, contains, prefix.
+  string op = 3;
+  string value = 4;
+}
+
+message FilterBatchResult {
+  bool ok = 1;
+  // Stable codes: EMPTY_INPUT, UNKNOWN_FIELD, UNKNOWN_OP.
+  string error_code = 2;
+  string error_message = 3;
+  repeated LogEntry entries = 4;
+  int32 matched_count = 5;
+}
+

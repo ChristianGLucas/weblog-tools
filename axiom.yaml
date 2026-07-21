@@ -1,0 +1,173 @@
+name: christiangeorgelucas/weblog-tools
+version: 0.1.0
+language: python
+license: MIT
+author: Christian George Lucas
+description: >-
+  Deterministic parsing of web-server ACCESS LOG lines into structured
+  records — Apache Common Log Format (CLF), NCSA Combined Log Format,
+  Nginx's default combined access-log format, and any caller-supplied
+  Apache LogFormat directive string (e.g. `%h %l %u %t "%r" %>s %b
+  "%{Referer}i" "%{User-agent}i"`) — wrapping the MIT-licensed apachelogs
+  library (jwodder/apachelogs). Distinct from http-message-tools (which
+  parses raw HTTP wire request/response MESSAGES), packet-tools (network-
+  layer packet decoding), and useragent-tools (User-Agent string
+  classification, the natural next hop for this package's user_agent
+  field): this package parses the textual LOG LINES a web server writes.
+  Parse a single line against a fixed or custom format; parse a
+  multi-line blob into an array of records, reporting which lines
+  failed; split an embedded request line into method/path/protocol;
+  normalize the embedded CLF timestamp into an ISO 8601 instant carrying
+  the log's own UTC offset (never the wall clock); detect which known
+  format a sample of lines best matches; extract a single field across a
+  batch; summarize a batch (status-class counts, method counts, total
+  bytes); and filter a batch by a field predicate. Every node is a pure,
+  deterministic single-input to single-output transform — no network, no
+  wall-clock, no randomness. Batch input is capped at 4 MiB (the Axiom
+  node transport ceiling) and 200000 lines, checked before any per-line
+  parsing; a malformed line returns a structured per-line error rather
+  than crashing the whole batch.
+tags:
+  - access-log
+  - apache
+  - nginx
+  - clf
+  - common-log-format
+  - combined-log-format
+  - logformat
+  - web-server
+  - log-parsing
+  - observability
+nodes:
+    - name: ParseCommonLogLine
+      input: ParseLineInput
+      output: LogEntry
+      description: >-
+        Parse a single Apache Common Log Format (CLF) line into its
+        structured fields: remote host, ident, user, timestamp, request
+        line (split into method/path/protocol), status, and response
+        size. Format: `%h %l %u %t "%r" %>s %b`. Input is capped at 65536
+        bytes; a line that doesn't match the CLF grammar returns
+        ok=false with a structured error rather than a crash.
+    - name: ParseCombinedLogLine
+      input: ParseLineInput
+      output: LogEntry
+      description: >-
+        Parse a single NCSA Combined Log Format line — Common Log Format
+        plus the Referer and User-Agent headers — into its structured
+        fields. Format: `%h %l %u %t "%r" %>s %b "%{Referer}i"
+        "%{User-agent}i"`. Input is capped at 65536 bytes; a line that
+        doesn't match the Combined grammar returns ok=false with a
+        structured error rather than a crash.
+    - name: ParseNginxLogLine
+      input: ParseLineInput
+      output: LogEntry
+      description: >-
+        Parse a single Nginx default (`combined`) access-log line into
+        its structured fields. Nginx's default log_format combined
+        directive is field-for-field identical grammar to Apache's
+        Combined Log Format (nginx hardcodes a literal "-" where
+        Apache's %l/ident would go, which is exactly what %l always logs
+        in practice since identd is essentially extinct), so this node
+        parses against that same grammar. Input is capped at 65536
+        bytes; a line that doesn't match returns ok=false with a
+        structured error.
+    - name: ParseCustomFormatLine
+      input: ParseCustomFormatInput
+      output: LogEntry
+      description: >-
+        Parse a single log line against a caller-supplied Apache
+        LogFormat directive string, e.g. `%h %l %u %t "%r" %>s %b
+        "%{Referer}i" "%{User-agent}i"`. Supports the full
+        mod_log_config directive grammar (plain directives like
+        %h/%l/%u/%s/%b/%r/%t, header directives like `%{Name}i`, and the
+        `%>`/`%<` first-vs-last modifiers) — any directive without a
+        dedicated LogEntry field is still captured in the `directives`
+        map. `format` is capped at 4096 bytes and `line` at 65536 bytes.
+        An invalid format string or a line that doesn't match returns
+        ok=false with a structured error rather than a crash.
+    - name: ParseBatch
+      input: BatchInput
+      output: BatchResult
+      description: >-
+        Parse a multi-line blob of access-log lines into an array of
+        structured LogEntry records, reporting which lines failed rather
+        than aborting the whole batch on the first bad line.
+        `format_name` selects a fixed format — "common", "combined", or
+        "nginx_combined" (the default) — or "custom", in which case
+        `format` must hold an Apache LogFormat directive string. Bounded
+        to 4 MiB and 200000 lines, checked on the raw input BEFORE any
+        per-line parsing — an oversized blob is rejected deterministically
+        with ok=false, never partially processed or OOMing.
+    - name: SplitRequestLine
+      input: RequestLineInput
+      output: RequestLineParts
+      description: >-
+        Split an HTTP request-line (the value logged by Apache's %r / an
+        access log's "$request"), e.g. "GET /a/b?x=1 HTTP/1.1", into its
+        three components: method, path (the raw request-target — may
+        still carry a query string; feed it to url-tools for further
+        parsing), and protocol. The same logic every Parse* node uses
+        internally, exposed standalone for a caller who already has a
+        bare request-line string. Apache's own convention — a completely
+        unparseable request line logged as the literal "-" — yields
+        ok=false, not a fabricated split. Input is capped at 65536 bytes.
+    - name: ParseTimestamp
+      input: TimestampInput
+      output: TimestampResult
+      description: >-
+        Parse the embedded CLF/Apache access-log timestamp (the value
+        logged by %t, e.g. "[01/Nov/2017:07:28:29 +0000]", brackets
+        optional) into a normalized ISO 8601 instant — carrying the UTC
+        offset the log line itself recorded, never the wall clock and
+        never converted to a different zone. Input is capped at 128
+        bytes; a string that doesn't match the `DD/Mon/YYYY:HH:MM:SS
+        +HHMM` grammar returns ok=false with a structured error.
+    - name: DetectFormat
+      input: DetectFormatInput
+      output: DetectFormatResult
+      description: >-
+        Detect which known access-log format ("common" or
+        "combined_or_nginx" — Apache Combined and Nginx's default
+        combined format share one grammar and cannot be told apart by
+        shape alone) a line or sample of lines best matches, by
+        attempting a full match against each known format's grammar.
+        Reports a best_guess plus every format that matched at least one
+        sample line: "unknown" when nothing matched, "ambiguous" when
+        different lines matched different formats. Accepts up to 1000
+        sample lines, each capped at 65536 bytes.
+    - name: ExtractField
+      input: ExtractFieldInput
+      output: ExtractFieldResult
+      description: >-
+        Extract one field's value across a batch of already-parsed
+        LogEntry records (typically chained from ParseBatch's `entries`)
+        — e.g. every status code, every path, every remote IP. Returns
+        exactly one value per input entry, in the same order, so the
+        result can be zipped back against the input positionally.
+        Supported fields: remote_host, ident, user, virtual_host,
+        timestamp, method, path, protocol, status, bytes_sent, referer,
+        user_agent.
+    - name: SummarizeBatch
+      input: SummarizeBatchInput
+      output: BatchSummary
+      description: >-
+        Aggregate a batch of already-parsed LogEntry records into
+        summary statistics: counts by status class (2xx/3xx/4xx/5xx/
+        other), counts by HTTP method, and total response bytes across
+        entries that carried a size. A pure aggregation over
+        already-parsed input — it never re-parses raw_line. Entries with
+        ok=false are counted separately in error_entry_count and
+        excluded from the other statistics.
+    - name: FilterBatch
+      input: FilterBatchInput
+      output: FilterBatchResult
+      description: >-
+        Filter a batch of already-parsed LogEntry records to those
+        matching a single field predicate, e.g. field="status" op="gte"
+        value="500" to find every server-error response. String ops: eq,
+        ne, contains, prefix. Numeric ops: gt, gte, lt, lte — a
+        non-numeric comparison (e.g. an empty status field) is a
+        non-match, not an error. Supported fields: remote_host, ident,
+        user, virtual_host, timestamp, method, path, protocol, status,
+        bytes_sent, referer, user_agent.
