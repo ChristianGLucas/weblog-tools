@@ -8,9 +8,21 @@ does not itself decompose), and enforces this package's input-size bounds.
 
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 import apachelogs
+
+# apachelogs stores %t's CONVERTED value (a datetime) in entry.directives,
+# not the original wire text, so str()-ing it does not reproduce what the
+# log line actually said (e.g. it turns "[21/Jul/2026:10:15:32 +0000]" into
+# "2026-07-21 10:15:32+00:00" - a different format entirely). Apache's own
+# %t directive always renders bracketed on the wire regardless of whether
+# the LogFormat string itself has literal brackets around %t (it doesn't,
+# in COMMON/COMBINED/nginx_combined) - the brackets are part of %t's own
+# output. Re-extract the actual bracketed substring straight from the raw
+# line so timestamp_raw/directives["%t"] reflect what was really logged.
+_RAW_TIMESTAMP_RGX = re.compile(r"\[\d{2}/\w{3}/\d{4}:\d{2}:\d{2}:\d{2}\s*[+-]\d{4}\]")
 
 # ── Named formats ────────────────────────────────────────────────────────
 
@@ -143,10 +155,17 @@ def entry_to_dict(
     user_agent = headers_in.get("User-Agent") or ""
 
     timestamp_iso = ""
-    timestamp_raw = directives.get("%t", "")
     rt = getattr(entry, "request_time", None)
     if rt is not None:
         timestamp_iso = rt.isoformat()
+
+    # Recover the actual wire text for %t (see _RAW_TIMESTAMP_RGX comment
+    # above) rather than str()-ing the already-converted datetime.
+    timestamp_raw = ""
+    if "%t" in directives:
+        m = _RAW_TIMESTAMP_RGX.search(raw_line)
+        timestamp_raw = m.group(0) if m else directives["%t"]
+        directives["%t"] = timestamp_raw
 
     return dict(
         raw_line=raw_line,

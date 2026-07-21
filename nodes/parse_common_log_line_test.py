@@ -31,6 +31,13 @@ def test_parse_common_log_line_apache_doc_example():
     assert result.has_bytes_sent is True
     # hand-computed from "10/Oct/2000:13:55:36 -0700"
     assert result.timestamp == "2000-10-10T13:55:36-07:00"
+    # timestamp_raw must be the ACTUAL wire text (bracketed, Apache's own
+    # rendering), not a Python str(datetime) reformatting of it — a real
+    # bug caught during manual live-invoke review: apachelogs stores the
+    # already-converted datetime in entry.directives["%t"], and naively
+    # str()-ing it silently changes the format instead of echoing the log.
+    assert result.timestamp_raw == "[10/Oct/2000:13:55:36 -0700]"
+    assert result.directives["%t"] == "[10/Oct/2000:13:55:36 -0700]"
     # CLF has no Referer/User-Agent directives at all
     assert result.referer == ""
     assert result.user_agent == ""
