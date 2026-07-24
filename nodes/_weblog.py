@@ -37,16 +37,6 @@ COMBINED = apachelogs.COMBINED
 # formats are therefore structurally identical and share one grammar.
 NGINX_COMBINED = COMBINED
 
-# ── Input-size bounds ────────────────────────────────────────────────────
-
-MAX_LINE_BYTES = 65536
-MAX_FORMAT_BYTES = 4096
-MAX_TIMESTAMP_BYTES = 128
-# The Axiom node gRPC transport ceiling is ~4 MiB; stay comfortably under it.
-MAX_BLOB_BYTES = 4 * 1024 * 1024 - 65536
-MAX_BATCH_LINES = 200_000
-MAX_SAMPLE_LINES = 1000
-
 _PARSER_CACHE: dict[str, "apachelogs.LogParser"] = {}
 
 
@@ -56,10 +46,6 @@ def _parser_for(fmt: str) -> "apachelogs.LogParser":
         p = apachelogs.LogParser(fmt)
         _PARSER_CACHE[fmt] = p
     return p
-
-
-def too_large(s: str, limit: int) -> bool:
-    return len(s.encode("utf-8", errors="surrogatepass")) > limit
 
 
 # ── Request-line splitting ───────────────────────────────────────────────

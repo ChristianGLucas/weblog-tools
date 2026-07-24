@@ -1,6 +1,5 @@
 from gen.messages_pb2 import BatchInput, BatchResult
 from nodes.parse_batch import parse_batch
-from nodes._weblog import MAX_BATCH_LINES, MAX_BLOB_BYTES
 from nodes._test_helpers import FakeAxiomContext
 
 GOOD_LINE_1 = (
@@ -83,18 +82,19 @@ def test_parse_batch_unknown_format_name_rejected():
     assert result.error_code == "INVALID_FORMAT"
 
 
-def test_parse_batch_oversized_blob_rejected_before_parsing():
+def test_parse_batch_large_single_line_blob_no_crash():
     ax = FakeAxiomContext()
-    huge = "a" * (MAX_BLOB_BYTES + 10)
+    huge = "a" * 4_500_000  # well past the old 4 MiB blob cap
     result = parse_batch(ax, BatchInput(blob=huge, format_name="combined"))
-    assert result.ok is False
-    assert result.error_code == "TOO_LARGE"
+    assert result.ok is True
     assert result.parsed_count == 0
+    assert result.failed_count == 1
 
 
-def test_parse_batch_too_many_lines_rejected():
+def test_parse_batch_large_line_count_no_crash():
     ax = FakeAxiomContext()
-    blob = "\n".join(["x"] * (MAX_BATCH_LINES + 1))
+    blob = "\n".join(["x"] * 210_000)  # well past the old 200,000-line cap
     result = parse_batch(ax, BatchInput(blob=blob, format_name="combined"))
-    assert result.ok is False
-    assert result.error_code == "TOO_MANY_LINES"
+    assert result.ok is True
+    assert result.total_lines == 210_000
+    assert result.failed_count == 210_000

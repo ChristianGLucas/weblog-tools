@@ -1,7 +1,6 @@
 from gen.messages_pb2 import RequestLineInput, RequestLineParts
 from gen.axiom_context import AxiomContext
 
-from nodes._weblog import MAX_LINE_BYTES, too_large
 from nodes._weblog import split_request_line as _split
 
 
@@ -15,18 +14,11 @@ def split_request_line(ax: AxiomContext, input: RequestLineInput) -> RequestLine
     who already has a bare request-line string (not a full log line)
     doesn't need to round-trip it through a full log format. Apache's own
     convention — a completely unparseable request line logged as the
-    literal "-" — yields ok=false, not a fabricated split. Input is capped
-    at 65536 bytes.
+    literal "-" — yields ok=false, not a fabricated split.
     """
     rl = input.request_line
     if rl == "":
         return RequestLineParts(ok=False, error_code="EMPTY_INPUT", error_message="request_line is empty")
-    if too_large(rl, MAX_LINE_BYTES):
-        return RequestLineParts(
-            ok=False,
-            error_code="TOO_LARGE",
-            error_message=f"request_line exceeds {MAX_LINE_BYTES} bytes",
-        )
     method, path, protocol, ok = _split(rl)
     if not ok:
         return RequestLineParts(

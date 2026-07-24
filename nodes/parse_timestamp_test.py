@@ -54,11 +54,11 @@ def test_parse_timestamp_empty_input():
     assert result.error_code == "EMPTY_INPUT"
 
 
-def test_parse_timestamp_too_large():
+def test_parse_timestamp_large_malformed_no_crash():
     ax = FakeAxiomContext()
     result = parse_timestamp(ax, TimestampInput(timestamp="x" * 200))
     assert result.ok is False
-    assert result.error_code == "TOO_LARGE"
+    assert result.error_code == "PARSE_ERROR"
 
 
 def test_parse_timestamp_deterministic():

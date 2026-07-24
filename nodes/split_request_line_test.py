@@ -1,6 +1,5 @@
 from gen.messages_pb2 import RequestLineInput, RequestLineParts
 from nodes.split_request_line import split_request_line
-from nodes._weblog import MAX_LINE_BYTES
 from nodes._test_helpers import FakeAxiomContext
 
 
@@ -59,12 +58,13 @@ def test_split_request_line_empty_input():
     assert result.error_code == "EMPTY_INPUT"
 
 
-def test_split_request_line_too_large():
+def test_split_request_line_large_target_no_crash():
     ax = FakeAxiomContext()
-    huge = "GET " + ("a" * MAX_LINE_BYTES) + " HTTP/1.1"
+    huge = "GET " + ("a" * 200_000) + " HTTP/1.1"
     result = split_request_line(ax, RequestLineInput(request_line=huge))
-    assert result.ok is False
-    assert result.error_code == "TOO_LARGE"
+    assert result.ok is True
+    assert result.method == "GET"
+    assert result.protocol == "HTTP/1.1"
 
 
 def test_split_request_line_extra_whitespace_tokens_is_malformed():

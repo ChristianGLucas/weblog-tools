@@ -62,8 +62,9 @@ def test_detect_format_empty_lines_list():
     assert result.error_code == "EMPTY_INPUT"
 
 
-def test_detect_format_too_many_lines():
+def test_detect_format_large_sample_no_crash():
     ax = FakeAxiomContext()
-    result = detect_format(ax, DetectFormatInput(lines=[CLF_LINE] * 1001))
-    assert result.ok is False
-    assert result.error_code == "TOO_MANY_LINES"
+    result = detect_format(ax, DetectFormatInput(lines=[CLF_LINE] * 5000))
+    assert result.ok is True
+    assert result.best_guess == "common"
+    assert result.lines_checked == 5000

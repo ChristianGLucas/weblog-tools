@@ -1,7 +1,7 @@
 from gen.messages_pb2 import DetectFormatInput, DetectFormatResult
 from gen.axiom_context import AxiomContext
 
-from nodes._weblog import COMBINED, COMMON, MAX_LINE_BYTES, MAX_SAMPLE_LINES, matches_format, too_large
+from nodes._weblog import COMBINED, COMMON, matches_format
 
 
 def detect_format(ax: AxiomContext, input: DetectFormatInput) -> DetectFormatResult:
@@ -12,25 +12,11 @@ def detect_format(ax: AxiomContext, input: DetectFormatInput) -> DetectFormatRes
     against each known format's grammar. Reports a "best_guess" plus every
     format that matched at least one sample line: "unknown" when nothing
     matched, "ambiguous" when different lines in the sample matched
-    different formats. Accepts up to 1000 sample lines, each capped at
-    65536 bytes; blank lines are skipped.
+    different formats. Blank lines are skipped.
     """
     lines = list(input.lines)
     if len(lines) == 0:
         return DetectFormatResult(ok=False, error_code="EMPTY_INPUT", error_message="lines is empty")
-    if len(lines) > MAX_SAMPLE_LINES:
-        return DetectFormatResult(
-            ok=False,
-            error_code="TOO_MANY_LINES",
-            error_message=f"{len(lines)} lines exceeds the {MAX_SAMPLE_LINES}-line limit",
-        )
-    for line in lines:
-        if too_large(line, MAX_LINE_BYTES):
-            return DetectFormatResult(
-                ok=False,
-                error_code="TOO_LARGE",
-                error_message=f"a sample line exceeds {MAX_LINE_BYTES} bytes",
-            )
 
     checked = 0
     common_hits = 0

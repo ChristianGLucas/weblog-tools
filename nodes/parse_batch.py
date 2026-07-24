@@ -1,14 +1,7 @@
 from gen.messages_pb2 import BatchInput, BatchResult, LineError, LogEntry
 from gen.axiom_context import AxiomContext
 
-from nodes._weblog import (
-    FORMAT_BY_NAME,
-    MAX_BATCH_LINES,
-    MAX_BLOB_BYTES,
-    MAX_FORMAT_BYTES,
-    parse_line,
-    too_large,
-)
+from nodes._weblog import FORMAT_BY_NAME, parse_line
 
 
 def parse_batch(ax: AxiomContext, input: BatchInput) -> BatchResult:
@@ -18,27 +11,13 @@ def parse_batch(ax: AxiomContext, input: BatchInput) -> BatchResult:
     fixed format — "common", "combined" (the default when left empty), or
     "nginx_combined" — or "custom", in which case `format` must hold an
     Apache LogFormat directive string. Blank lines are skipped (not
-    counted as errors). Bounded to 4 MiB and 200000 lines, checked on the
-    raw input BEFORE any per-line parsing — an oversized blob is rejected
-    deterministically with ok=false, never partially processed or OOMing.
+    counted as errors).
     """
     blob = input.blob
-    if too_large(blob, MAX_BLOB_BYTES):
-        return BatchResult(
-            ok=False,
-            error_code="TOO_LARGE",
-            error_message=f"blob exceeds {MAX_BLOB_BYTES} bytes",
-        )
 
     format_name = input.format_name or "combined"
     if format_name == "custom":
         fmt = input.format
-        if too_large(fmt, MAX_FORMAT_BYTES):
-            return BatchResult(
-                ok=False,
-                error_code="TOO_LARGE",
-                error_message=f"format exceeds {MAX_FORMAT_BYTES} bytes",
-            )
         if fmt.strip() == "":
             return BatchResult(
                 ok=False,
@@ -55,12 +34,6 @@ def parse_batch(ax: AxiomContext, input: BatchInput) -> BatchResult:
         )
 
     lines = blob.splitlines()
-    if len(lines) > MAX_BATCH_LINES:
-        return BatchResult(
-            ok=False,
-            error_code="TOO_MANY_LINES",
-            error_message=f"blob has {len(lines)} lines, exceeding the {MAX_BATCH_LINES} limit",
-        )
 
     entries = []
     errors = []

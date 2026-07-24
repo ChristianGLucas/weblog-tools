@@ -68,12 +68,12 @@ def test_parse_common_log_line_empty_input():
     assert result.error_code == "EMPTY_INPUT"
 
 
-def test_parse_common_log_line_too_large():
+def test_parse_common_log_line_large_malformed_line_no_crash():
     ax = FakeAxiomContext()
     huge = "a" * 70000
     result = parse_common_log_line(ax, ParseLineInput(line=huge))
     assert result.ok is False
-    assert result.error_code == "TOO_LARGE"
+    assert result.error_code == "PARSE_ERROR"
 
 
 def test_parse_common_log_line_rejects_combined_shaped_line():
